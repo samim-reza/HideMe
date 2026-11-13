@@ -108,6 +108,45 @@ export function Toggle({
   )
 }
 
+/** A labelled slider with its current value shown, e.g. "Gap between rows  3 mm". */
+export function RangeField({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  unit = '',
+}: {
+  label: string
+  value: number
+  onChange: (v: number) => void
+  min: number
+  max: number
+  step?: number
+  unit?: string
+}) {
+  return (
+    <label className="block py-1">
+      <span className="flex items-center justify-between gap-3 text-sm">
+        <span className="text-gray-700">{label}</span>
+        <span className="font-medium text-gray-900 tabular-nums">
+          {value} {unit}
+        </span>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="mt-1 h-8 w-full accent-brand-700"
+      />
+    </label>
+  )
+}
+
 export function Button({
   children,
   onClick,

@@ -1,18 +1,24 @@
 # Hide Me
 
-Print your photo without giving it away.
+Share photos and documents without giving them away.
 
-Make a print-ready sheet (passport, stamp, visa or custom size, any number of copies on A4/Letter/4×6), then send the print shop a **link** instead of the file. They open it and press Print. The link stops working at the time you choose, and the shop never gets the photo file.
+Send a **link** instead of the file. The other person opens it in any browser and can view and print, but there is no download, and the link stops working at the time you choose.
+
+- **Photo prints:** passport, stamp, visa or custom size. Pick the number of copies, paper (A4/Letter/4×6/5×7), position (left / center / right, or drag the photos anywhere), the gaps between photos and the distance from the paper edge. The shop just presses Print.
+- **Documents:** PDF, Word (.docx), Excel/CSV, text files, images, or a ZIP of these. Optional watermark on every page, and printing can be turned off (view only). Old .doc, PowerPoint and other formats that a browser can't show are refused with advice to "Save as PDF" first.
 
 **Live:** https://hideme.samimreza.me (site on GitHub Pages) · API: `https://hideme-api.hideme-worker.workers.dev` (Cloudflare Worker)
 
 ## How privacy works
 
-- The photo is cropped and re-saved in your browser, which removes GPS and camera metadata.
-- It is then locked (AES-256-GCM) in your browser with a new random key.
+- Files are prepared in the owner's browser before anything leaves the device:
+  - photos and images are re-drawn, which removes GPS and camera metadata;
+  - spreadsheets become plain tables of text (no formulas, macros or hidden sheets);
+  - ZIP files are opened on the owner's device and only the files that can be shown are kept, so the other person never receives the ZIP.
+- Everything is then locked (AES-256-GCM) in the browser with a new random key.
 - Only the locked data is uploaded. The key goes into the part of the link after `#`, which browsers never send to any server, so the server cannot unlock it.
 - The server refuses the link after the expiry time (server clock) and storage deletes the data automatically. The owner can also stop a link early.
-- The shop's page keeps the photo only in memory and clears it when the time is up. Nothing is saved to the shop's computer.
+- The viewer has no download button. PDFs are drawn as images (no text to copy, no links, PDF scripts never run), Word comments and tracked changes are not shown, and the save/copy shortcuts are blocked. Nothing is saved on the other person's computer, and the page clears itself when the link expires.
 
 **Honest limit:** while the link is valid, the person viewing it can still take a screenshot, photograph the screen or choose "Save as PDF" when printing. Hide Me stops the file from being kept by default, not a determined copier.
 
@@ -23,7 +29,9 @@ Make a print-ready sheet (passport, stamp, visa or custom size, any number of co
 | `web/` | Vite + React + TypeScript + Tailwind site | GitHub Pages at `hideme.samimreza.me` |
 | `worker/` | Small API that stores locked data until it expires | Cloudflare Workers + Workers KV |
 
-There are no accounts and no user database. "My links" is kept only in the owner's browser.
+There are no accounts and no user database. "My links" is kept only in the owner's browser. Up to 24 MB per link.
+
+Libraries that are loaded only when needed: pdf.js (legacy build, so older browsers in print shops work), docx-preview, SheetJS (owner side only) and fflate (ZIP, owner side only). `npm run dev`/`build` copies pdf.js fonts and decoders into `web/public/pdfjs/`.
 
 ## Run locally
 

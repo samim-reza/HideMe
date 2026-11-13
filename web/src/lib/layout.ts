@@ -30,11 +30,19 @@ export const PHOTO_SIZES: PhotoSize[] = [
   { id: '3r', label: '3R', hint: '3.5 × 5 in', w: 88.9, h: 127 },
 ]
 
-/** Space kept empty at the paper edge (most printers cannot print the outer ~4 mm). */
+/** Default space kept empty at the paper edge (most printers cannot print the outer ~4 mm). */
 export const MARGIN_MM = 6
-/** Space between photos, for cutting. */
+/** Default space between photos, for cutting. */
 export const GAP_MM = 3
 export const MAX_COPIES = 60
+export const MAX_GAP_MM = 30
+export const MAX_MARGIN_MM = 40
+
+/**
+ * Where the block of photos sits on the paper. 'left' | 'center' | 'right'
+ * keep it at the top; 'custom' uses x/y (set by dragging).
+ */
+export type Align = 'left' | 'center' | 'right' | 'custom'
 
 export interface SheetSettings {
   photoW: number
@@ -43,11 +51,29 @@ export interface SheetSettings {
   copies: number | 'fill'
   paperId: string
   cutLines: boolean
+  /** Gap between photos side by side, in mm. */
+  gapX?: number
+  /** Gap between rows, in mm. */
+  gapY?: number
+  /** Empty space kept at the paper edge, in mm. */
+  margin?: number
+  /** Links made before these options existed have no align and stay centred. */
+  align?: Align
+  /** Top-left corner of the photo block in mm, used when align is 'custom'. */
+  x?: number
+  y?: number
 }
 
 export interface Slot {
   x: number
   y: number
+}
+
+export interface Box {
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 export interface SheetLayout {
@@ -59,6 +85,10 @@ export interface SheetLayout {
   capacity: number
   /** Copies the user asked for that do not fit on this paper. */
   dropped: number
+  /** The rectangle around all photos (empty when nothing fits). */
+  block: Box
+  /** Where the block's top-left corner may go while staying inside the margins. */
+  bounds: { minX: number; maxX: number; minY: number; maxY: number }
 }
 
 export function getPaper(id: string): Paper {
@@ -67,10 +97,16 @@ export function getPaper(id: string): Paper {
 
 export function computeLayout(s: SheetSettings): SheetLayout {
   const paper = getPaper(s.paperId)
-  const usableW = paper.w - 2 * MARGIN_MM
-  const usableH = paper.h - 2 * MARGIN_MM
-  const maxCols = Math.max(0, Math.floor((usableW + GAP_MM) / (s.photoW + GAP_MM)))
-  const maxRows = Math.max(0, Math.floor((usableH + GAP_MM) / (s.photoH + GAP_MM)))
+  const gapX = clamp(s.gapX ?? GAP_MM, 0, MAX_GAP_MM)
+  const gapY = clamp(s.gapY ?? GAP_MM, 0, MAX_GAP_MM)
+  const margin = clamp(s.margin ?? MARGIN_MM, 0, MAX_MARGIN_MM)
+  const align: Align = s.align ?? 'center'
+
+  const usableW = paper.w - 2 * margin
+  const usableH = paper.h - 2 * margin
+  // A tiny tolerance so that photos that fit exactly are not lost to rounding.
+  const maxCols = Math.max(0, Math.floor((usableW + gapX + 1e-6) / (s.photoW + gapX)))
+  const maxRows = Math.max(0, Math.floor((usableH + gapY + 1e-6) / (s.photoH + gapY)))
   const capacity = maxCols * maxRows
 
   const wanted =
@@ -79,27 +115,65 @@ export function computeLayout(s: SheetSettings): SheetLayout {
   const dropped = wanted - count
 
   if (count === 0) {
-    return { paper, photoW: s.photoW, photoH: s.photoH, slots: [], capacity, dropped }
+    return {
+      paper,
+      photoW: s.photoW,
+      photoH: s.photoH,
+      slots: [],
+      capacity,
+      dropped,
+      block: { x: margin, y: margin, w: 0, h: 0 },
+      bounds: { minX: margin, maxX: margin, minY: margin, maxY: margin },
+    }
   }
 
   // Use as few rows as possible, then spread the photos evenly over those rows,
   // so 8 copies become 4 + 4 rather than 5 + 3.
   const rows = Math.ceil(count / maxCols)
   const cols = Math.ceil(count / rows)
-  const blockW = cols * s.photoW + (cols - 1) * GAP_MM
-  const x0 = (paper.w - blockW) / 2
-  const y0 = MARGIN_MM
+  const blockW = cols * s.photoW + (cols - 1) * gapX
+  const blockH = rows * s.photoH + (rows - 1) * gapY
+
+  const bounds = {
+    minX: margin,
+    maxX: Math.max(margin, paper.w - margin - blockW),
+    minY: margin,
+    maxY: Math.max(margin, paper.h - margin - blockH),
+  }
+
+  let x0: number
+  let y0 = margin
+  if (align === 'left') x0 = bounds.minX
+  else if (align === 'right') x0 = bounds.maxX
+  else if (align === 'custom') {
+    x0 = clamp(s.x ?? bounds.minX, bounds.minX, bounds.maxX)
+    y0 = clamp(s.y ?? bounds.minY, bounds.minY, bounds.maxY)
+  } else x0 = (paper.w - blockW) / 2
 
   const slots: Slot[] = []
   for (let i = 0; i < count; i++) {
     const r = Math.floor(i / cols)
     const c = i % cols
     slots.push({
-      x: round2(x0 + c * (s.photoW + GAP_MM)),
-      y: round2(y0 + r * (s.photoH + GAP_MM)),
+      x: round2(x0 + c * (s.photoW + gapX)),
+      y: round2(y0 + r * (s.photoH + gapY)),
     })
   }
-  return { paper, photoW: s.photoW, photoH: s.photoH, slots, capacity, dropped }
+  return {
+    paper,
+    photoW: s.photoW,
+    photoH: s.photoH,
+    slots,
+    capacity,
+    dropped,
+    block: { x: round2(x0), y: round2(y0), w: round2(blockW), h: round2(blockH) },
+    bounds,
+  }
+}
+
+function clamp(n: number, lo: number, hi: number) {
+  if (!Number.isFinite(n)) return lo
+  return Math.min(hi, Math.max(lo, n))
 }
 
 function round2(n: number) {

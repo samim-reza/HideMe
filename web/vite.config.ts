@@ -12,6 +12,9 @@ function csp(apiUrl: string): Plugin {
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' blob: data:",
+    // PDF and Word files can carry their own fonts; they are loaded from memory.
+    "font-src 'self' blob: data:",
+    "worker-src 'self'",
     `connect-src 'self' ${apiOrigin}`,
     "object-src 'none'",
     "base-uri 'none'",
@@ -34,6 +37,8 @@ export default defineConfig(({ mode }) => {
   const apiUrl = env.VITE_API_URL || 'http://localhost:8787'
   return {
     plugins: [react(), tailwindcss(), csp(apiUrl)],
+    // The pdf.js worker is large, but it is only loaded when a PDF is opened.
+    build: { chunkSizeWarningLimit: 1600 },
     test: { environment: 'node' },
   }
 })

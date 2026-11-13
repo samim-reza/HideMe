@@ -1,27 +1,31 @@
 import QRCode from 'qrcode'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { revokeShare } from '../lib/api'
-import type { SheetLayout } from '../lib/layout'
 import { forgetLink, formatRemaining } from '../lib/share'
 import { useNow } from '../lib/useNow'
-import type { Created } from '../pages/Create'
-import { SheetPreview } from './Sheet'
+import type { Created } from '../lib/linkOptions'
 import { Button, Card, Notice } from './ui'
 
 export default function ShareResult({
   created,
-  layout,
-  imageUrl,
-  cutLines,
+  title,
+  message,
+  previewTitle,
+  preview,
   onDone,
   onEdit,
+  doneLabel,
 }: {
   created: Created
-  layout: SheetLayout
-  imageUrl: string | null
-  cutLines: boolean
+  /** Title for the phone share sheet, e.g. "Photo for printing". */
+  title: string
+  /** Text sent along with the link, e.g. "Please print this sheet at 100% scale." */
+  message: string
+  previewTitle: string
+  preview: ReactNode
   onDone: () => void
   onEdit: () => void
+  doneLabel: string
 }) {
   const [qr, setQr] = useState('')
   const [copied, setCopied] = useState(false)
@@ -50,11 +54,7 @@ export default function ShareResult({
 
   async function share() {
     try {
-      await navigator.share({
-        title: 'Photo for printing',
-        text: 'Please print this sheet at 100% scale. The link expires soon.',
-        url: created.link,
-      })
+      await navigator.share({ title, text: message, url: created.link })
     } catch {
       // User closed the share sheet.
     }
@@ -88,7 +88,7 @@ export default function ShareResult({
           <h1 className="text-xl font-bold">Link stopped</h1>
           <p className="mt-2 text-gray-600">Nobody can open it any more. The locked data has been deleted from the server.</p>
           <Button onClick={onDone} className="mt-5 w-full">
-            Make a new sheet
+            {doneLabel}
           </Button>
         </Card>
       </div>
@@ -105,7 +105,7 @@ export default function ShareResult({
           <h1 className="text-xl font-bold text-gray-900">Your link is ready</h1>
         </div>
         <p className="mt-1 text-sm text-gray-600">
-          Send it to the print shop. It works until <strong>{expiresText}</strong> (
+          Send it to the person who needs it. It works until <strong>{expiresText}</strong> (
           {formatRemaining(created.expiresAt - now)} left).
         </p>
 
@@ -127,7 +127,7 @@ export default function ShareResult({
             </Button>
           )}
           <a
-            href={`https://wa.me/?text=${encodeURIComponent('Please print this sheet at 100% scale: ' + created.link)}`}
+            href={`https://wa.me/?text=${encodeURIComponent(message + ' ' + created.link)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50"
@@ -157,7 +157,7 @@ export default function ShareResult({
             Change and make another link
           </Button>
           <Button variant="ghost" onClick={onDone}>
-            New photo
+            Start over
           </Button>
         </div>
       </Card>
@@ -169,8 +169,8 @@ export default function ShareResult({
             <p className="mt-2 text-center text-xs text-gray-500">Show this on your phone at the shop counter.</p>
           </Card>
         )}
-        <Card title="What they will print">
-          <SheetPreview layout={layout} imageUrl={imageUrl} cutLines={cutLines} maxHeightPx={300} />
+        <Card title={previewTitle}>
+          {preview}
         </Card>
       </div>
     </div>

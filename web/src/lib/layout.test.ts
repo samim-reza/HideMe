@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeLayout, GAP_MM, MARGIN_MM } from './layout'
+import { computeLayout, GAP_MM, MARGIN_MM, type SheetSettings } from './layout'
 
 const passport = { photoW: 35, photoH: 45, cutLines: false }
 
@@ -59,5 +59,73 @@ describe('computeLayout', () => {
     const l = computeLayout({ photoW: 300, photoH: 400, cutLines: false, copies: 1, paperId: '4x6' })
     expect(l.slots).toHaveLength(0)
     expect(l.capacity).toBe(0)
+  })
+})
+
+describe('position and spacing', () => {
+  const base: SheetSettings = { photoW: 35, photoH: 45, cutLines: false, copies: 4, paperId: 'a4' }
+
+  it('keeps old links (no align set) centred with 3 mm gaps', () => {
+    const l = computeLayout(base)
+    expect(l.slots[1].x - l.slots[0].x).toBeCloseTo(35 + 3, 5)
+    expect(Math.abs(l.block.x - (210 - l.block.x - l.block.w))).toBeLessThan(0.02)
+  })
+
+  it('left-aligns the block at the margin', () => {
+    const l = computeLayout({ ...base, align: 'left' })
+    expect(l.slots[0]).toEqual({ x: MARGIN_MM, y: MARGIN_MM })
+  })
+
+  it('right-aligns the block at the margin', () => {
+    const l = computeLayout({ ...base, align: 'right' })
+    const last = l.slots[l.slots.length - 1]
+    expect(last.x + 35).toBeCloseTo(210 - MARGIN_MM, 5)
+  })
+
+  it('uses separate horizontal and vertical gaps', () => {
+    const l = computeLayout({ ...base, copies: 8, align: 'left', gapX: 10, gapY: 2 })
+    const xs = [...new Set(l.slots.map((s) => s.x))].sort((a, b) => a - b)
+    const ys = [...new Set(l.slots.map((s) => s.y))].sort((a, b) => a - b)
+    expect(xs[1] - xs[0]).toBeCloseTo(45, 5)
+    expect(ys[1] - ys[0]).toBeCloseTo(47, 5)
+  })
+
+  it('zero gaps put photos edge to edge', () => {
+    const l = computeLayout({ ...base, align: 'left', gapX: 0 })
+    expect(l.slots[1].x - l.slots[0].x).toBeCloseTo(35, 5)
+  })
+
+  it('respects a custom edge margin', () => {
+    const l = computeLayout({ ...base, align: 'left', margin: 15 })
+    expect(l.slots[0]).toEqual({ x: 15, y: 15 })
+  })
+
+  it('a bigger margin fits fewer photos', () => {
+    const small = computeLayout({ ...base, copies: 'fill', margin: 6 })
+    const big = computeLayout({ ...base, copies: 'fill', margin: 30 })
+    expect(big.capacity).toBeLessThan(small.capacity)
+  })
+
+  it('places a dragged block where it was dropped', () => {
+    const l = computeLayout({ ...base, align: 'custom', x: 50, y: 100 })
+    expect(l.slots[0]).toEqual({ x: 50, y: 100 })
+  })
+
+  it('keeps a dragged block inside the margins', () => {
+    const l = computeLayout({ ...base, align: 'custom', x: 500, y: -20 })
+    expect(l.block.x + l.block.w).toBeCloseTo(210 - MARGIN_MM, 5)
+    expect(l.block.y).toBe(MARGIN_MM)
+  })
+
+  it('reports drag bounds that match the block size', () => {
+    const l = computeLayout({ ...base, align: 'left' })
+    expect(l.bounds.maxX).toBeCloseTo(210 - MARGIN_MM - l.block.w, 5)
+    expect(l.bounds.maxY).toBeCloseTo(297 - MARGIN_MM - l.block.h, 5)
+  })
+
+  it('ignores nonsense values', () => {
+    const l = computeLayout({ ...base, gapX: Number.NaN, gapY: -5, margin: 999 })
+    expect(l.slots.length).toBeGreaterThanOrEqual(0)
+    expect(Number.isFinite(l.block.x)).toBe(true)
   })
 })

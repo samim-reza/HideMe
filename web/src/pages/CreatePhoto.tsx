@@ -1,31 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Cropper, { type Area, type Point } from 'react-easy-crop'
 import { PrintSheet, SheetPreview } from '../components/Sheet'
-import { Button, Card, Choice, LockIcon, Notice, PrinterIcon, Toggle } from '../components/ui'
+import LinkSettings from '../components/LinkSettings'
+import { Button, Card, Choice, LockIcon, Notice, PrinterIcon, RangeField, Toggle } from '../components/ui'
 import ShareResult from '../components/ShareResult'
 import { createShare } from '../lib/api'
 import { encrypt, pack, randomBytes, toBase64Url } from '../lib/crypto'
 import { cropToJpeg, dpiFor, loadImage } from '../lib/image'
-import { computeLayout, MAX_COPIES, PAPERS, PHOTO_SIZES, type SheetSettings } from '../lib/layout'
+import {
+  computeLayout,
+  GAP_MM,
+  MARGIN_MM,
+  MAX_COPIES,
+  PAPERS,
+  PHOTO_SIZES,
+  type Align,
+  type SheetSettings,
+} from '../lib/layout'
+import type { Created } from '../lib/linkOptions'
 import { buildLink, rememberLink, type SharePayload } from '../lib/share'
 
 const MAX_INPUT_BYTES = 40 * 1024 * 1024
-
-const EXPIRY_OPTIONS = [
-  { value: 600, label: '10 min' },
-  { value: 3600, label: '1 hour' },
-  { value: 6 * 3600, label: '6 hours' },
-  { value: 24 * 3600, label: '1 day' },
-  { value: 3 * 24 * 3600, label: '3 days' },
-  { value: 7 * 24 * 3600, label: '7 days' },
-]
-
-const OPEN_OPTIONS = [
-  { value: 0, label: 'No limit' },
-  { value: 1, label: '1 time' },
-  { value: 3, label: '3 times' },
-  { value: 10, label: '10 times' },
-]
 
 type CopiesChoice = number | 'fill' | 'other'
 const COPY_OPTIONS: { value: CopiesChoice; label: string }[] = [
@@ -38,14 +33,7 @@ const COPY_OPTIONS: { value: CopiesChoice; label: string }[] = [
   { value: 'other', label: 'Other' },
 ]
 
-export interface Created {
-  link: string
-  id: string
-  deleteToken: string
-  expiresAt: number
-}
-
-export default function Create() {
+export default function CreatePhoto() {
   // Photo
   const [srcUrl, setSrcUrl] = useState<string | null>(null)
   const [fileName, setFileName] = useState('')
@@ -66,6 +54,11 @@ export default function Create() {
   const [otherCopies, setOtherCopies] = useState(10)
   const [paperId, setPaperId] = useState('a4')
   const [cutLines, setCutLines] = useState(true)
+  const [align, setAlign] = useState<Align>('left')
+  const [pos, setPos] = useState({ x: MARGIN_MM, y: MARGIN_MM })
+  const [gapX, setGapX] = useState(GAP_MM)
+  const [gapY, setGapY] = useState(GAP_MM)
+  const [margin, setMargin] = useState(MARGIN_MM)
 
   // Link
   const [expiresIn, setExpiresIn] = useState(6 * 3600)
@@ -82,10 +75,33 @@ export default function Create() {
   const sizeLabel = preset ? `${preset.label} ${preset.hint}` : `${photoW} × ${photoH} mm`
 
   const copies = copiesChoice === 'other' ? clamp(otherCopies, 1, MAX_COPIES) : copiesChoice
-  const settings: SheetSettings = { photoW, photoH, copies, paperId, cutLines }
+  const settings: SheetSettings = {
+    photoW,
+    photoH,
+    copies,
+    paperId,
+    cutLines,
+    gapX,
+    gapY,
+    margin,
+    align,
+    ...(align === 'custom' ? pos : {}),
+  }
   const layout = useMemo(
-    () => computeLayout({ photoW, photoH, copies, paperId, cutLines }),
-    [photoW, photoH, copies, paperId, cutLines],
+    () =>
+      computeLayout({
+        photoW,
+        photoH,
+        copies,
+        paperId,
+        cutLines,
+        gapX,
+        gapY,
+        margin,
+        align,
+        ...(align === 'custom' ? pos : {}),
+      }),
+    [photoW, photoH, copies, paperId, cutLines, gapX, gapY, margin, align, pos],
   )
 
   // ---- choosing a photo ----
@@ -219,9 +235,11 @@ export default function Create() {
     return (
       <ShareResult
         created={created}
-        layout={layout}
-        imageUrl={croppedUrl}
-        cutLines={cutLines}
+        title="Photo for printing"
+        message="Please print this sheet at 100% scale. The link expires soon."
+        previewTitle="What they will print"
+        preview={<SheetPreview layout={layout} imageUrl={croppedUrl} cutLines={cutLines} maxHeightPx={300} />}
+        doneLabel="Make a new sheet"
         onDone={startOver}
         onEdit={() => setCreated(null)}
       />
@@ -314,6 +332,30 @@ export default function Create() {
             onChange={setPaperId}
             options={PAPERS.map((p) => ({ value: p.id, label: p.label }))}
           />
+          <p className="mt-4 mb-2 text-sm text-gray-600">Position on the paper</p>
+          <Choice
+            label="Position"
+            value={align}
+            onChange={setAlign}
+            options={[
+              { value: 'left', label: 'Left' },
+              { value: 'center', label: 'Center' },
+              { value: 'right', label: 'Right' },
+              ...(align === 'custom' ? [{ value: 'custom' as const, label: 'Custom', hint: 'dragged' }] : []),
+            ]}
+          />
+          <p className="mt-2 text-xs text-gray-500">Or drag the photos on the preview to place them anywhere.</p>
+
+          <p className="mt-4 mb-1 text-sm text-gray-600">Spacing</p>
+          <RangeField label="Gap between photos (side by side)" value={gapX} onChange={setGapX} min={0} max={20} step={0.5} unit="mm" />
+          <RangeField label="Gap between rows" value={gapY} onChange={setGapY} min={0} max={20} step={0.5} unit="mm" />
+          <RangeField label="Distance from paper edge" value={margin} onChange={setMargin} min={0} max={30} step={0.5} unit="mm" />
+          {margin < 4 && (
+            <div className="mt-1">
+              <Notice tone="warn">Many printers can't print closer than about 4 mm to the edge, so photos may be cut off.</Notice>
+            </div>
+          )}
+
           <div className="mt-3">
             <Toggle checked={cutLines} onChange={setCutLines} label="Cut lines" hint="Thin grey guides around each photo" />
           </div>
@@ -332,30 +374,36 @@ export default function Create() {
           )}
         </Card>
 
-        <Card step={3} title="Link settings">
-          <p className="mb-2 text-sm text-gray-600">Link stops working after</p>
-          <Choice label="Expiry" value={expiresIn} onChange={setExpiresIn} options={EXPIRY_OPTIONS} />
-          <p className="mt-4 mb-2 text-sm text-gray-600">Can be opened</p>
-          <Choice label="Open limit" value={maxOpens} onChange={setMaxOpens} options={OPEN_OPTIONS} />
-          {maxOpens > 0 && (
-            <p className="mt-2 text-xs text-gray-500">Reloading the page also counts as opening it.</p>
-          )}
-          <div className="mt-3 border-t border-gray-100 pt-2">
-            <Toggle
-              checked={allowAdjust}
-              onChange={setAllowAdjust}
-              label="Let the shop change copies and paper"
-              hint="They still can't download or edit the photo"
-            />
-          </div>
-        </Card>
+        <LinkSettings
+          step={3}
+          expiresIn={expiresIn}
+          onExpiresIn={setExpiresIn}
+          maxOpens={maxOpens}
+          onMaxOpens={setMaxOpens}
+        >
+          <Toggle
+            checked={allowAdjust}
+            onChange={setAllowAdjust}
+            label="Let the shop change copies, paper and position"
+            hint="They still can't download or edit the photo"
+          />
+        </LinkSettings>
       </div>
 
       <div className="lg:sticky lg:top-20 lg:self-start">
         <Card title="Print preview">
-          <SheetPreview layout={layout} imageUrl={croppedUrl} cutLines={cutLines} maxHeightPx={460} />
+          <SheetPreview
+            layout={layout}
+            imageUrl={croppedUrl}
+            cutLines={cutLines}
+            maxHeightPx={460}
+            onMoveBlock={(x, y) => {
+              setAlign('custom')
+              setPos({ x, y })
+            }}
+          />
           <p className="mt-3 text-center text-xs text-gray-500">
-            {layout.slots.length} × {sizeLabel} on {layout.paper.label}
+            {layout.slots.length} × {sizeLabel} on {layout.paper.label} · drag the photos to move them
           </p>
 
           {error && (

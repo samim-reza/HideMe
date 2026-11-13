@@ -44,11 +44,166 @@ body {
   outline-offset: 0.6mm;
 }
 
+/* Invisible handle over the photo block that lets the owner drag it. */
+.sheet-drag {
+  position: absolute;
+  cursor: grab;
+  touch-action: none;
+  border-radius: 1mm;
+  outline: 0.6mm dashed transparent;
+  outline-offset: 1.2mm;
+  transition: outline-color 0.15s;
+}
+.sheet-drag:hover,
+.sheet-drag:focus-visible {
+  outline-color: rgb(13 148 136 / 0.7);
+}
+.sheet-drag:focus {
+  outline-style: dashed;
+}
+.sheet-drag.dragging {
+  cursor: grabbing;
+  outline-color: rgb(13 148 136);
+  background: rgb(13 148 136 / 0.06);
+}
+
+/* ---- Shared documents ---- */
+
+.watermark {
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background-repeat: repeat;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.docview.guarded,
+.docview.guarded * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.docview:fullscreen {
+  overflow: auto;
+  padding: 16px;
+  background: #e5e7eb;
+}
+
+.docx-host .docx-wrapper {
+  background: transparent;
+  padding: 4px 0 0;
+}
+.docx-host .docx-wrapper > section.docx {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), 0 8px 24px rgb(0 0 0 / 0.06);
+  margin-bottom: 16px;
+}
+
+.doc-table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+.doc-table th,
+.doc-table td {
+  border: 1px solid #e5e7eb;
+  padding: 0.3em 0.6em;
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+.doc-table th {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+
+/* Print pages built for shared documents (see lib/printDocs.ts). */
+.print-page {
+  position: relative;
+  overflow: hidden;
+  break-after: page;
+  box-sizing: border-box;
+  background: #fff;
+}
+.print-page:last-child {
+  break-after: auto;
+}
+.print-page img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.print-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 10.5pt/1.5 ui-sans-serif, system-ui, "Noto Sans", "Noto Sans Bengali", sans-serif;
+  color: #000;
+}
+.print-sheet-title {
+  font: 600 12pt sans-serif;
+  margin: 0 0 3mm;
+  break-before: page;
+}
+.print-sheet-title:first-child {
+  break-before: auto;
+}
+.print-table {
+  border-collapse: collapse;
+  width: 100%;
+  font: 8.5pt/1.3 ui-sans-serif, system-ui, "Noto Sans", sans-serif;
+  margin-bottom: 6mm;
+}
+.print-table th,
+.print-table td {
+  border: 0.2mm solid #999;
+  padding: 1mm 1.5mm;
+  text-align: left;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+.print-table thead {
+  display: table-header-group;
+}
+.print-table th {
+  background: #eee;
+}
+.print-docx section.docx {
+  padding: 0 !important;
+  width: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  background: #fff !important;
+  break-after: page;
+}
+.print-docx section.docx:last-of-type {
+  break-after: auto;
+}
+.print-blocked {
+  padding: 60mm 20mm 0;
+  text-align: center;
+  font: 600 16pt sans-serif;
+  color: #444;
+}
+
+/* Shown only if someone prints from the browser menu without using a Print button. */
+.print-fallback {
+  display: none;
+}
+
 .print-portal {
   display: none;
 }
 
 @media print {
+  body:not(:has(.print-portal)) > .print-fallback {
+    display: block;
+    padding: 60mm 20mm 0;
+    text-align: center;
+    font: 600 14pt sans-serif;
+    color: #444;
+  }
   html,
   body {
     margin: 0 !important;

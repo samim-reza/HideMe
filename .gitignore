@@ -6,3 +6,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Copied from node_modules at build time
+web/public/pdfjs/

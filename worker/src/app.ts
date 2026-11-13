@@ -31,7 +31,8 @@ interface Meta {
   tokenHash: string
 }
 
-export const MAX_BYTES = 20 * 1024 * 1024
+// Just under Workers KV's 25 MiB limit per value; the site allows 24 MiB of files per link.
+export const MAX_BYTES = 25 * 1024 * 1024 - 64 * 1024
 export const MIN_TTL_S = 60
 export const MAX_TTL_S = 7 * 24 * 3600
 const MAX_OPENS_LIMIT = 1000
@@ -202,7 +203,7 @@ const MESSAGES: Record<string, string> = {
   not_found: 'This link has expired or was removed.',
   expired: 'This link has expired.',
   used_up: 'This link has been opened the maximum number of times.',
-  too_large: 'This file is too big (20 MB maximum).',
+  too_large: 'This is too big for one link (24 MB maximum).',
   rate_limited: 'Too many requests. Please wait a minute.',
   forbidden: 'Not allowed.',
   bad_payload: 'The upload was not in the expected format.',
