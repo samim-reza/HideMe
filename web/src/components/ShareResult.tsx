@@ -86,7 +86,7 @@ export default function ShareResult({
       <div className="mx-auto max-w-lg">
         <Card>
           <h1 className="text-xl font-bold">Link stopped</h1>
-          <p className="mt-2 text-gray-600">Nobody can open it any more. The locked data has been deleted from the server.</p>
+          <p className="mt-2 text-gray-600">Nobody can open it any more — it can take up to a minute to stop everywhere. The locked data has been deleted from the server.</p>
           <Button onClick={onDone} className="mt-5 w-full">
             {doneLabel}
           </Button>

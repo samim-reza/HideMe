@@ -12,6 +12,7 @@ export interface RateLimiter {
 /** The subset of the KV API used here (lets tests use an in-memory fake). */
 export interface KV {
   get(key: string, type: 'json'): Promise<unknown>
+  get(key: string, type: 'text'): Promise<string | null>
   get(key: string, type: 'arrayBuffer'): Promise<ArrayBuffer | null>
   put(key: string, value: string | ArrayBuffer, opts?: { expiration?: number; expirationTtl?: number }): Promise<void>
   delete(key: string): Promise<void>
@@ -24,11 +25,21 @@ export interface Env {
   RATE_LIMITER?: RateLimiter
 }
 
+// Storage keys per link:
+//   blob:<id>   the encrypted data
+//   meta:<id>   expiry, open limit, hash of the delete token. Written when the
+//               link is made and when it is stopped, never in between.
+//   opens:<id>  how many times it was opened
+// KV copies are cached at each Cloudflare location for up to about a minute.
+// Because only "stop" rewrites meta (and it is marked, not deleted), a late
+// write from an open somewhere else can never bring a stopped link back.
 interface Meta {
   expiresAt: number
-  opens: number
   maxOpens: number | null
   tokenHash: string
+  revoked?: boolean
+  /** Only present in links made before opens had their own key. */
+  opens?: number
 }
 
 // Just under Workers KV's 25 MiB limit per value; the site allows 24 MiB of files per link.
@@ -81,7 +92,7 @@ export async function handle(req: Request, env: Env, now = Date.now()): Promise<
     if (req.method === 'GET') return respond(await open(id, env, now))
     if (req.method === 'DELETE') {
       if (!(await allow(env, req, 'delete'))) return respond(error(429, 'rate_limited'))
-      return respond(await revoke(id, req, env))
+      return respond(await revoke(id, req, env, now))
     }
     return respond(error(405, 'method_not_allowed'))
   } catch (e) {
@@ -116,7 +127,7 @@ async function create(req: Request, env: Env, now: number): Promise<Response> {
   const id = b64url(randomBytes(16))
   const deleteToken = b64url(randomBytes(32))
   const expiresAt = now + ttl * 1000
-  const meta: Meta = { expiresAt, opens: 0, maxOpens, tokenHash: await sha256hex(deleteToken) }
+  const meta: Meta = { expiresAt, maxOpens, tokenHash: await sha256hex(deleteToken) }
 
   await env.SHARES.put(`blob:${id}`, body, { expirationTtl: ttl })
   await env.SHARES.put(`meta:${id}`, JSON.stringify(meta), { expirationTtl: ttl })
@@ -126,23 +137,29 @@ async function create(req: Request, env: Env, now: number): Promise<Response> {
 
 async function readMeta(id: string, env: Env, now: number): Promise<Meta | Response> {
   const meta = (await env.SHARES.get(`meta:${id}`, 'json')) as Meta | null
-  if (!meta) return error(404, 'not_found')
+  if (!meta || meta.revoked) return error(404, 'not_found')
   if (now >= meta.expiresAt) return error(410, 'expired')
   return meta
+}
+
+async function readOpens(id: string, meta: Meta, env: Env): Promise<number> {
+  const raw = await env.SHARES.get(`opens:${id}`, 'text')
+  const n = raw === null ? (meta.opens ?? 0) : Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : 0
 }
 
 async function open(id: string, env: Env, now: number): Promise<Response> {
   const meta = await readMeta(id, env, now)
   if (meta instanceof Response) return meta
-  if (meta.maxOpens !== null && meta.opens >= meta.maxOpens) return error(410, 'used_up')
+  const opens = await readOpens(id, meta, env)
+  if (meta.maxOpens !== null && opens >= meta.maxOpens) return error(410, 'used_up')
 
   const blob = await env.SHARES.get(`blob:${id}`, 'arrayBuffer')
   if (!blob) return error(404, 'not_found')
 
   // Count the open. KV is not transactional, so two opens at the very same
   // moment may count as one; the time limit is always exact.
-  meta.opens += 1
-  await env.SHARES.put(`meta:${id}`, JSON.stringify(meta), { expiration: kvExpiration(meta.expiresAt, now) })
+  await env.SHARES.put(`opens:${id}`, String(opens + 1), { expiration: kvExpiration(meta.expiresAt, now) })
 
   return new Response(blob, {
     status: 200,
@@ -150,7 +167,7 @@ async function open(id: string, env: Env, now: number): Promise<Response> {
       'Content-Type': 'application/octet-stream',
       'X-Expires-At': String(meta.expiresAt),
       'X-Server-Now': String(now),
-      'X-Opens': String(meta.opens),
+      'X-Opens': String(opens + 1),
       ...(meta.maxOpens !== null ? { 'X-Max-Opens': String(meta.maxOpens) } : {}),
     },
   })
@@ -159,16 +176,20 @@ async function open(id: string, env: Env, now: number): Promise<Response> {
 async function status(id: string, env: Env, now: number): Promise<Response> {
   const meta = await readMeta(id, env, now)
   if (meta instanceof Response) return meta
-  return json(200, { expiresAt: meta.expiresAt, now, opens: meta.opens, maxOpens: meta.maxOpens })
+  const opens = await readOpens(id, meta, env)
+  return json(200, { expiresAt: meta.expiresAt, now, opens, maxOpens: meta.maxOpens })
 }
 
-async function revoke(id: string, req: Request, env: Env): Promise<Response> {
+async function revoke(id: string, req: Request, env: Env, now: number): Promise<Response> {
   const token = req.headers.get('X-Delete-Token') ?? ''
   const meta = (await env.SHARES.get(`meta:${id}`, 'json')) as Meta | null
-  if (!meta) return error(404, 'not_found')
+  if (!meta || meta.revoked) return error(404, 'not_found')
   if (!token || !timingSafeEqual(await sha256hex(token), meta.tokenHash)) return error(403, 'forbidden')
+  // Mark as stopped first (kept until the original expiry), then delete the data.
+  const stopped: Meta = { expiresAt: meta.expiresAt, maxOpens: meta.maxOpens, tokenHash: meta.tokenHash, revoked: true }
+  await env.SHARES.put(`meta:${id}`, JSON.stringify(stopped), { expiration: kvExpiration(meta.expiresAt, now) })
   await env.SHARES.delete(`blob:${id}`)
-  await env.SHARES.delete(`meta:${id}`)
+  await env.SHARES.delete(`opens:${id}`)
   return new Response(null, { status: 204 })
 }
 

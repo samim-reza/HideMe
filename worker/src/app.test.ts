@@ -16,7 +16,7 @@ class MemoryKV implements KV {
     return e.value
   }
 
-  async get(key: string, type: 'json' | 'arrayBuffer'): Promise<any> {
+  async get(key: string, type: 'json' | 'text' | 'arrayBuffer'): Promise<any> {
     const v = this.live(key)
     if (v === null) return null
     return type === 'json' ? JSON.parse(v as string) : v
@@ -152,8 +152,21 @@ describe('open', () => {
   it('keeps the original expiry when counting opens', async () => {
     const s = await created({ ttl: 600 })
     await call(`/api/shares/${s.id}`)
-    const e = kv.store.get(`meta:${s.id}`)!
-    expect(e.expiresAtS).toBe(Math.ceil(s.expiresAt / 1000))
+    expect(kv.store.get(`opens:${s.id}`)!.expiresAtS).toBe(Math.ceil(s.expiresAt / 1000))
+  })
+
+  it('never rewrites the link record when counting opens', async () => {
+    const s = await created()
+    const before = JSON.stringify(await kv.get(`meta:${s.id}`, 'json'))
+    await call(`/api/shares/${s.id}`)
+    expect(JSON.stringify(await kv.get(`meta:${s.id}`, 'json'))).toBe(before)
+  })
+
+  it('still reads open counts from links made before this change', async () => {
+    const s = await created({ maxOpens: 3 })
+    const meta = (await kv.get(`meta:${s.id}`, 'json')) as Record<string, unknown>
+    await kv.put(`meta:${s.id}`, JSON.stringify({ ...meta, opens: 3 }), { expirationTtl: 3600 })
+    expect((await call(`/api/shares/${s.id}`)).status).toBe(410)
   })
 
   it('returns 404 for unknown or malformed ids', async () => {
@@ -174,12 +187,36 @@ describe('status', () => {
 })
 
 describe('revoke', () => {
-  it('deletes the share with the right token', async () => {
+  it('deletes the data with the right token and marks the link stopped', async () => {
     const s = await created()
+    await call(`/api/shares/${s.id}`)
     const res = await call(`/api/shares/${s.id}`, { method: 'DELETE', headers: { 'X-Delete-Token': s.deleteToken } })
     expect(res.status).toBe(204)
-    expect(kv.store.size).toBe(0)
+    expect(kv.store.has(`blob:${s.id}`)).toBe(false)
+    expect(kv.store.has(`opens:${s.id}`)).toBe(false)
     expect((await call(`/api/shares/${s.id}`)).status).toBe(404)
+    expect((await call(`/api/shares/${s.id}/status`)).status).toBe(404)
+    // Stopping again is harmless
+    expect((await call(`/api/shares/${s.id}`, { method: 'DELETE', headers: { 'X-Delete-Token': s.deleteToken } })).status).toBe(404)
+  })
+
+  it('a late open count from elsewhere cannot bring a stopped link back', async () => {
+    const s = await created()
+    await call(`/api/shares/${s.id}`, { method: 'DELETE', headers: { 'X-Delete-Token': s.deleteToken } })
+    // What a slow open at another location might write after the stop:
+    await kv.put(`opens:${s.id}`, '5', { expirationTtl: 3600 })
+    await kv.put(`blob:${s.id}`, fakeCiphertext().buffer, { expirationTtl: 3600 })
+    expect((await call(`/api/shares/${s.id}/status`)).status).toBe(404)
+    expect((await call(`/api/shares/${s.id}`)).status).toBe(404)
+  })
+
+  it('keeps the stopped mark only until the original expiry', async () => {
+    const s = await created({ ttl: 600 })
+    await call(`/api/shares/${s.id}`, { method: 'DELETE', headers: { 'X-Delete-Token': s.deleteToken } })
+    clock.now += 601_000
+    expect(kv.store.size).toBeGreaterThan(0)
+    await kv.get(`meta:${s.id}`, 'json')
+    expect(kv.store.has(`meta:${s.id}`)).toBe(false)
   })
 
   it('refuses a wrong or missing token', async () => {
