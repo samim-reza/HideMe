@@ -4,6 +4,8 @@ Print your photo without giving it away.
 
 Make a print-ready sheet (passport, stamp, visa or custom size, any number of copies on A4/Letter/4×6), then send the print shop a **link** instead of the file. They open it and press Print. The link stops working at the time you choose, and the shop never gets the photo file.
 
+**Live:** https://hideme.samimreza.me (site on GitHub Pages) · API: `https://hideme-api.hideme-worker.workers.dev` (Cloudflare Worker)
+
 ## How privacy works
 
 - The photo is cropped and re-saved in your browser, which removes GPS and camera metadata.
