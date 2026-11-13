@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Cropper, { type Area, type Point } from 'react-easy-crop'
 import { PrintSheet, SheetPreview } from '../components/Sheet'
 import LinkSettings from '../components/LinkSettings'
-import { Button, Card, Choice, LockIcon, Notice, PrinterIcon, RangeField, Toggle } from '../components/ui'
+import { Button, Card, Choice, LockIcon, Notice, PrinterIcon, Toggle } from '../components/ui'
+import SheetControls from '../components/SheetControls'
 import ShareResult from '../components/ShareResult'
 import { createShare } from '../lib/api'
 import { encrypt, pack, randomBytes, toBase64Url } from '../lib/crypto'
@@ -332,33 +333,18 @@ export default function CreatePhoto() {
             onChange={setPaperId}
             options={PAPERS.map((p) => ({ value: p.id, label: p.label }))}
           />
-          <p className="mt-4 mb-2 text-sm text-gray-600">Position on the paper</p>
-          <Choice
-            label="Position"
-            value={align}
-            onChange={setAlign}
-            options={[
-              { value: 'left', label: 'Left' },
-              { value: 'center', label: 'Center' },
-              { value: 'right', label: 'Right' },
-              ...(align === 'custom' ? [{ value: 'custom' as const, label: 'Custom', hint: 'dragged' }] : []),
-            ]}
+          <SheetControls
+            align={align}
+            onAlign={setAlign}
+            gapX={gapX}
+            onGapX={setGapX}
+            gapY={gapY}
+            onGapY={setGapY}
+            margin={margin}
+            onMargin={setMargin}
+            cutLines={cutLines}
+            onCutLines={setCutLines}
           />
-          <p className="mt-2 text-xs text-gray-500">Or drag the photos on the preview to place them anywhere.</p>
-
-          <p className="mt-4 mb-1 text-sm text-gray-600">Spacing</p>
-          <RangeField label="Gap between photos (side by side)" value={gapX} onChange={setGapX} min={0} max={20} step={0.5} unit="mm" />
-          <RangeField label="Gap between rows" value={gapY} onChange={setGapY} min={0} max={20} step={0.5} unit="mm" />
-          <RangeField label="Distance from paper edge" value={margin} onChange={setMargin} min={0} max={30} step={0.5} unit="mm" />
-          {margin < 4 && (
-            <div className="mt-1">
-              <Notice tone="warn">Many printers can't print closer than about 4 mm to the edge, so photos may be cut off.</Notice>
-            </div>
-          )}
-
-          <div className="mt-3">
-            <Toggle checked={cutLines} onChange={setCutLines} label="Cut lines" hint="Thin grey guides around each photo" />
-          </div>
           {layout.capacity === 0 ? (
             <div className="mt-2">
               <Notice tone="error">This photo size is bigger than the paper. Choose a larger paper or a smaller size.</Notice>
@@ -384,8 +370,8 @@ export default function CreatePhoto() {
           <Toggle
             checked={allowAdjust}
             onChange={setAllowAdjust}
-            label="Let the shop change copies, paper and position"
-            hint="They still can't download or edit the photo"
+            label="Let the shop change the layout"
+            hint="Copies, paper, position, gaps and cut lines. They still can't download or edit the photo."
           />
         </LinkSettings>
       </div>

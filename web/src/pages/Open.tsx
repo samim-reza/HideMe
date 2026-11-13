@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import DocsViewer from '../components/docs/DocsViewer'
 import { PrintSheet, SheetPreview } from '../components/Sheet'
+import SheetControls from '../components/SheetControls'
 import { Button, Card, Choice, LockIcon, Notice, PrinterIcon } from '../components/ui'
 import { fetchShare, getStatus, GoneError } from '../lib/api'
 import { decrypt, fromBase64Url, unpack } from '../lib/crypto'
 import { splitDocs, type DocsPayload } from '../lib/docs'
-import { computeLayout, MAX_COPIES, PAPERS, type Align } from '../lib/layout'
+import { computeLayout, GAP_MM, MARGIN_MM, MAX_COPIES, PAPERS, type Align, type SheetSettings } from '../lib/layout'
 import { formatRemaining, type SharePayload } from '../lib/share'
 import { useNow } from '../lib/useNow'
 
@@ -204,6 +205,33 @@ function ReadyDocs({ payload, body, remaining }: { payload: DocsPayload; body: U
 
 // ---- Photo sheet ----
 
+interface SheetEdits {
+  copies: number | 'fill'
+  paperId: string
+  align: Align
+  x?: number
+  y?: number
+  gapX: number
+  gapY: number
+  margin: number
+  cutLines: boolean
+}
+
+/** The layout exactly as the owner sent it, with defaults for links made before these options existed. */
+function asSent(s: SheetSettings): SheetEdits {
+  return {
+    copies: s.copies,
+    paperId: s.paperId,
+    align: s.align ?? 'center',
+    x: s.x,
+    y: s.y,
+    gapX: s.gapX ?? GAP_MM,
+    gapY: s.gapY ?? GAP_MM,
+    margin: s.margin ?? MARGIN_MM,
+    cutLines: s.cutLines,
+  }
+}
+
 function ReadySheet({ payload, body, remaining }: { payload: SharePayload; body: Uint8Array<ArrayBuffer>; remaining: number }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   useEffect(() => {
@@ -215,11 +243,14 @@ function ReadySheet({ payload, body, remaining }: { payload: SharePayload; body:
     }
   }, [body, payload.mime])
 
-  const [copies, setCopies] = useState<number | 'fill'>(payload.sheet.copies)
-  const [paperId, setPaperId] = useState(payload.sheet.paperId)
-  const [align, setAlign] = useState<Align>(payload.sheet.align ?? 'center')
-  const sheet = payload.allowAdjust ? { ...payload.sheet, copies, paperId, align } : payload.sheet
+  const sent = useMemo(() => asSent(payload.sheet), [payload.sheet])
+  const [edits, setEdits] = useState<SheetEdits>(sent)
+  const set = (patch: Partial<SheetEdits>) => setEdits((e) => ({ ...e, ...patch }))
+  const canEdit = payload.allowAdjust
+  const sheet: SheetSettings = canEdit ? { ...payload.sheet, ...edits } : payload.sheet
   const layout = computeLayout(sheet) // cheap; recomputed on every render
+  const changed = canEdit && JSON.stringify(edits) !== JSON.stringify(sent)
+  const atSentPosition = sent.align === 'custom' && edits.x === sent.x && edits.y === sent.y
 
   const copyOptions = useMemo(() => {
     const base: number[] = [1, 2, 4, 6, 8]
@@ -235,13 +266,8 @@ function ReadySheet({ payload, body, remaining }: { payload: SharePayload; body:
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="order-2 lg:order-1">
-        <Card>
-          <SheetPreview layout={layout} imageUrl={imageUrl} cutLines={sheet.cutLines} maxHeightPx={720} />
-        </Card>
-      </div>
-
-      <div className="order-1 space-y-5 lg:sticky lg:top-20 lg:order-2 lg:self-start">
+      {/* Top on phones; top right on computers. */}
+      <div className="lg:col-start-2 lg:row-start-1">
         <Card>
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -253,7 +279,7 @@ function ReadySheet({ payload, body, remaining }: { payload: SharePayload; body:
             <TimeLeft remaining={remaining} />
           </div>
 
-          <Button onClick={() => window.print()} disabled={!imageUrl} className="mt-4 w-full py-4 text-base">
+          <Button onClick={() => window.print()} disabled={!imageUrl || layout.slots.length === 0} className="mt-4 w-full py-4 text-base">
             <PrinterIcon />
             Print
           </Button>
@@ -273,43 +299,79 @@ function ReadySheet({ payload, body, remaining }: { payload: SharePayload; body:
               <Num n={3} /> Margins: <strong>None</strong> (or Default)
             </li>
           </ol>
+          {canEdit && (
+            <p className="mt-3 text-xs text-gray-500">
+              {changed
+                ? 'You changed the layout. The print uses your changes; the photo itself stays the same.'
+                : 'You can change the layout below before printing.'}
+            </p>
+          )}
         </Card>
-
-        {payload.allowAdjust && (
-          <Card title="Change copies, paper or position">
-            <Choice label="Copies" value={copies} onChange={setCopies} options={copyOptions} />
-            <div className="mt-3">
-              <Choice
-                label="Paper"
-                value={paperId}
-                onChange={setPaperId}
-                options={PAPERS.map((p) => ({ value: p.id, label: p.label }))}
-              />
-            </div>
-            <div className="mt-3">
-              <Choice
-                label="Position"
-                value={align}
-                onChange={setAlign}
-                options={[
-                  { value: 'left', label: 'Left' },
-                  { value: 'center', label: 'Center' },
-                  { value: 'right', label: 'Right' },
-                  ...(payload.sheet.align === 'custom' ? [{ value: 'custom' as const, label: 'As sent' }] : []),
-                ]}
-              />
-            </div>
-            {layout.dropped > 0 && <p className="mt-2 text-xs text-amber-800">Only {layout.capacity} fit on this paper.</p>}
-          </Card>
-        )}
-
-        <p className="px-1 text-xs leading-relaxed text-gray-500">
-          This photo was shared privately with Hide Me. It is not saved on this computer, and this page clears itself
-          when the link expires. Please don't save or copy it.
-        </p>
       </div>
 
-      {imageUrl && <PrintSheet layout={layout} imageUrl={imageUrl} cutLines={sheet.cutLines} />}
+      {/* Between the two cards on phones; the whole left column on computers. */}
+      <div className="lg:col-start-1 lg:row-span-3 lg:row-start-1">
+        <div className="lg:sticky lg:top-20">
+          <Card>
+            <SheetPreview
+              layout={layout}
+              imageUrl={imageUrl}
+              cutLines={sheet.cutLines}
+              maxHeightPx={720}
+              onMoveBlock={canEdit ? (x, y) => set({ align: 'custom', x, y }) : undefined}
+            />
+            {canEdit && <p className="mt-3 text-center text-xs text-gray-500">Drag the photos to move them.</p>}
+          </Card>
+        </div>
+      </div>
+
+      {canEdit && (
+        <div className="lg:col-start-2 lg:row-start-2">
+          <Card title="Change the layout">
+            <p className="mb-2 text-sm text-gray-600">Copies</p>
+            <Choice label="Copies" value={edits.copies} onChange={(copies) => set({ copies })} options={copyOptions} />
+            <p className="mt-4 mb-2 text-sm text-gray-600">Paper</p>
+            <Choice
+              label="Paper"
+              value={edits.paperId}
+              onChange={(paperId) => set({ paperId })}
+              options={PAPERS.map((p) => ({ value: p.id, label: p.label }))}
+            />
+            <SheetControls
+              align={edits.align}
+              onAlign={(align) => set({ align })}
+              customHint={atSentPosition ? 'as sent' : 'dragged'}
+              gapX={edits.gapX}
+              onGapX={(gapX) => set({ gapX })}
+              gapY={edits.gapY}
+              onGapY={(gapY) => set({ gapY })}
+              margin={edits.margin}
+              onMargin={(margin) => set({ margin })}
+              cutLines={edits.cutLines}
+              onCutLines={(cutLines) => set({ cutLines })}
+            />
+            {layout.capacity === 0 ? (
+              <div className="mt-2">
+                <Notice tone="error">The photos don't fit on this paper with these settings. Choose a larger paper or smaller gaps.</Notice>
+              </div>
+            ) : (
+              layout.dropped > 0 && <p className="mt-2 text-xs text-amber-800">Only {layout.capacity} fit on this paper.</p>
+            )}
+            {changed && (
+              <Button variant="secondary" className="mt-4 w-full" onClick={() => setEdits(sent)}>
+                Reset to how it was sent
+              </Button>
+            )}
+          </Card>
+        </div>
+      )}
+
+      <p className="px-1 text-xs leading-relaxed text-gray-500 lg:col-start-2">
+        This photo was shared privately with Hide Me. It is not saved on this computer, and this page clears itself
+        when the link expires. Please don't save or copy it.
+      </p>
+
+      {imageUrl && layout.slots.length > 0 && <PrintSheet layout={layout} imageUrl={imageUrl} cutLines={sheet.cutLines} />}
     </div>
   )
 }

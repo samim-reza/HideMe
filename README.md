@@ -4,7 +4,7 @@ Share photos and documents without giving them away.
 
 Send a **link** instead of the file. The other person opens it in any browser and can view and print, but there is no download, and the link stops working at the time you choose.
 
-- **Photo prints:** passport, stamp, visa or custom size. Pick the number of copies, paper (A4/Letter/4×6/5×7), position (left / center / right, or drag the photos anywhere), the gaps between photos and the distance from the paper edge. The shop just presses Print.
+- **Photo prints:** passport, stamp, visa or custom size. Pick the number of copies, paper (A4/Letter/4×6/5×7), position (left / center / right, or drag the photos anywhere), the gaps between photos and the distance from the paper edge. The shop just presses Print. If you allow it, the shop can also change copies, paper, position (or drag), gaps, edge distance and cut lines before printing, and reset to how you sent it; the photo itself can't be changed or downloaded.
 - **Documents:** PDF, Word (.docx), Excel/CSV, text files, images, or a ZIP of these. Optional watermark on every page, and printing can be turned off (view only). Old .doc, PowerPoint and other formats that a browser can't show are refused with advice to "Save as PDF" first.
 
 **Live:** https://hideme.samimreza.me (site on GitHub Pages) · API: `https://hideme-api.hideme-worker.workers.dev` (Cloudflare Worker)
