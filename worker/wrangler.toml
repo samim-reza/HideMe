@@ -1,0 +1,19 @@
+name = "hideme-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+# Website(s) allowed to create links.
+[vars]
+ALLOWED_ORIGINS = "https://hideme.samimreza.me,http://localhost:5173"
+
+# Temporary encrypted storage. Replace the id after running:
+#   npx wrangler kv namespace create SHARES
+[[kv_namespaces]]
+binding = "SHARES"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Free per-IP rate limit for creating and revoking links.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }

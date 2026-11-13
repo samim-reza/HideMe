@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #f0fdfa;
+  --color-brand-100: #ccfbf1;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+}
+
+html,
+body {
+  background: #f6f7f9;
+  color: #111827;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Print sheet ---- */
+
+.sheet {
+  position: relative;
+  background: #fff;
+  overflow: hidden;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.sheet-shadow > .sheet {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12), 0 8px 24px rgb(0 0 0 / 0.08);
+}
+
+.sheet-photo {
+  position: absolute;
+  display: block;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Thin grey guide just outside each photo, for cutting. */
+.sheet-photo.cut {
+  outline: 0.15mm solid #9ca3af;
+  outline-offset: 0.6mm;
+}
+
+.print-portal {
+  display: none;
+}
+
+@media print {
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  #root {
+    display: none !important;
+  }
+  .print-portal {
+    display: block !important;
+  }
+}
